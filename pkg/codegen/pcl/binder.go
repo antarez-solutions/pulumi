@@ -55,6 +55,8 @@ type binder struct {
 	tokens syntax.TokenMap
 	nodes  []Node
 	root   *model.Scope
+
+	opaqueTypes model.OpaqueTypeMap
 }
 
 type BindOption func(*bindOptions)
@@ -122,6 +124,7 @@ func BindProgram(files []*syntax.File, opts ...BindOption) (*Program, hcl.Diagno
 		referencedPackages: map[string]schema.PackageReference{},
 		schemaTypes:        map[schema.Type]model.Type{},
 		root:               model.NewRootScope(syntax.None),
+		opaqueTypes:        model.NewOpaqueTypeMap(),
 	}
 
 	// Define null.

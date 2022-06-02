@@ -525,23 +525,25 @@ func TestObjectType(t *testing.T) {
 func TestOpaqueType(t *testing.T) {
 	t.Parallel()
 
-	foo, err := NewOpaqueType("foo")
+	m := NewOpaqueTypeMap()
+
+	foo, err := m.InsertOpaqueType("foo")
 	assert.NotNil(t, foo)
 	assert.NoError(t, err)
 
-	foo2, ok := GetOpaqueType("foo")
+	foo2, ok := m.GetOpaqueType("foo")
 	assert.EqualValues(t, foo, foo2)
 	assert.True(t, ok)
 
-	foo3, err := NewOpaqueType("foo")
+	foo3, err := m.InsertOpaqueType("foo")
 	assert.Nil(t, foo3)
 	assert.Error(t, err)
 
-	bar, ok := GetOpaqueType("bar")
+	bar, ok := m.GetOpaqueType("bar")
 	assert.Nil(t, bar)
 	assert.False(t, ok)
 
-	bar, err = NewOpaqueType("bar")
+	bar, err = m.InsertOpaqueType("bar")
 	assert.NotNil(t, bar)
 	assert.NoError(t, err)
 

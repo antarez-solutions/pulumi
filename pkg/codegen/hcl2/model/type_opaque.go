@@ -1,4 +1,4 @@
-// Copyright 2016-2020, Pulumi Corporation.
+// Copyright 2016-2022, Pulumi Corporation.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@ package model
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/hclsyntax"
@@ -34,33 +35,74 @@ type OpaqueType struct {
 	s string
 }
 
-// The set of opaque types, indexed by name.
-var opaqueTypes = map[string]*OpaqueType{}
+// A global type map for built-in types, e.g.: "bool"
+var globalTypes = make(map[string]*OpaqueType)
 
-// GetOpaqueType fetches the opaque type for the given name.
-func GetOpaqueType(name string) (*OpaqueType, bool) {
-	t, ok := opaqueTypes[name]
-	return t, ok
+type OpaqueTypeMap interface {
+	// GetOpaqueType fetches the opaque type for the given name.
+	GetOpaqueType(name string) (*OpaqueType, bool)
+
+	// InsertOpaqueType creates a new opaque type with the given name. Returns an error if it already
+	// exists as a global type, otherwise gets or inserts the given name and returns a reference to it.
+	InsertOpaqueType(name string, annotations ...interface{}) *OpaqueType
 }
 
-// MustNewOpaqueType creates a new opaque type with the given name.
+// An owned map type for concurrency and memory isolation between binders
+type opaqueTypeMap struct {
+	entries map[string]*OpaqueType
+
+	m sync.RWMutex
+}
+
+func NewOpaqueTypeMap() OpaqueTypeMap {
+	return &opaqueTypeMap{}
+}
+
+// MustNewOpaqueType creates a new, globally defined opaque type with the given name.
+//
+// SAFETY: Must be called only a global var or in an Init() method, as this will panic on concurrent
+// writes or if the type already exists.
 func MustNewOpaqueType(name string, annotations ...interface{}) *OpaqueType {
-	t, err := NewOpaqueType(name, annotations...)
-	if err != nil {
-		panic(err)
+	if _, ok := globalTypes[name]; ok {
+		panic(fmt.Errorf("opaque type %s is already defined as a global type", name))
 	}
+
+	var t = &OpaqueType{Name: name, Annotations: annotations}
+	globalTypes[name] = t
 	return t
 }
 
-// NewOpaqueType creates a new opaque type with the given name.
-func NewOpaqueType(name string, annotations ...interface{}) (*OpaqueType, error) {
-	if _, ok := opaqueTypes[name]; ok {
-		return nil, fmt.Errorf("opaque type %s is already defined", name)
+func (m *opaqueTypeMap) GetOpaqueType(name string) (*OpaqueType, bool) {
+	if t, ok := globalTypes[name]; ok {
+		return t, ok
+	}
+
+	m.m.RLock()
+	defer m.m.RUnlock()
+
+	t, ok := m.entries[name]
+	return t, ok
+}
+
+func (m *opaqueTypeMap) InsertOpaqueType(name string, annotations ...interface{}) *OpaqueType {
+	if t, ok := globalTypes[name]; ok {
+		return t
+	}
+
+	m.m.Lock()
+	defer m.m.Unlock()
+
+	if m.entries == nil {
+		m.entries = make(map[string]*OpaqueType)
+	}
+
+	if t, ok := m.entries[name]; ok {
+		return t
 	}
 
 	t := &OpaqueType{Name: name, Annotations: annotations}
-	opaqueTypes[name] = t
-	return t, nil
+	m.entries[name] = t
+	return t
 }
 
 // SyntaxNode returns the syntax node for the type. This is always syntax.None.
